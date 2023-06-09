@@ -5,7 +5,6 @@
 #Packages
 library(tidyverse)
 library(phyloseq)
-library(dplyr)
 library("iNEXT")
 library("microDecon")
 library("ggrepel")
@@ -126,15 +125,7 @@ read.csv2("datatransmission/mtd_transmission_cor.csv") %>%
   mutate(row = ID) %>% 
   column_to_rownames(., var = "row") -> my_mtd_trans
 
-# my_mtd %>%
-#   select(sample_ID) %>%
-#   as.vector() -> samples_to_keep 
-
-# rownames(my_mtd) <- my_mtd$Label
-
 #**OTU pour décontamination----
-
-# columns_to_keep <- c("OTU", "references", samples_to_keep$sample_ID)
 
 read_tsv(illumina_data_trans,
          na = c("", "NA", "No_hit", "0", "0.0"),
@@ -148,8 +139,6 @@ read_tsv(illumina_data_trans,
   filter(total > 0) %>% 
   select(-total,-references) %>% 
   column_to_rownames(var = "OTU") -> my_otu_trans
-
-# colnames(my_otu) <- my_mtd$Label
 
 #**Tax pour décontamination (sans séparer les ref)----
 
@@ -169,33 +158,37 @@ read_tsv(illumina_data_trans,
   column_to_rownames(var = "OTU") %>% 
   cbind(.,OTU = rownames(my_otu_trans)) -> my_tax_trans
 
+# options(max.print = 10000)
+# rownames(my_otu_trans) == rownames(my_tax_trans) 
+
 #*******************----
 #MicroDecon----
 # install.packages("remotes")
 # remotes::install_github("donaldtmcknight/microDecon")
 library("microDecon")
 
+neg_samples <- my_otu_trans %>% #enlever mock 
+  select(731:738) %>% 
+  summarise(across(everything(), sum)) 
+
 neg_samples <- my_otu_trans %>%
   select(731:738) %>%
-  as.data.frame() 
+  as.data.frame()
 
-env_samples <- my_otu_trans %>%
-  select(1:730) %>%
-  as.data.frame() 
+env_samples <- my_otu_trans %>% #enlever mock 
+  select(1:728) %>% 
+  summarise(across(4:ncol(.), sum)) %>% 
+  select_if(~ sum(.) < 800) 
 
-# neg <- my_otu[,c("25_Water","74_Lysis_buffer", "75_Lysis_buffer","76_EAUmilliQ","77_EAUmilliQ","78_EAU_SIGMA","79_Empty","80_Library_PCR","81_Library_PCR" )]
-# env <- my_otu[, !names(my_otu) %in% c("OTU","25_Water","74_Lysis_buffer", "75_Lysis_buffer","76_EAUmilliQ","77_EAUmilliQ","78_EAU_SIGMA","79_Empty","80_Library_PCR","81_Library_PCR")]
+env_samples <- my_otu_trans %>% #enlever mock 
+  select(1:728) %>% 
+  as.data.frame() 
 
 data.frame(OTU = rownames(my_otu_trans)) %>% 
   cbind(., neg_samples) %>% 
   cbind.data.frame(., env_samples) -> df_decon
 
-# data.frame(OTU = rownames(my_otu)) %>% 
-#   cbind(., neg) %>% 
-#   cbind.data.frame(., env) -> df_decon
-
-
-# decontaminated <- decon(data = df_decon,numb.blanks=length(colnames(neg_samples)),numb.ind=length(colnames(env_samples)), taxa=F) # je suis obligé d'enlever les NEG de PCR car en TRUE FALSE ou si on change c'est 1/0 donc trop faible 
+decontaminated <- decon(data = df_decon,numb.blanks=length(colnames(neg_samples)),numb.ind=length(colnames(env_samples)), taxa=F) # je suis obligé d'enlever les NEG de PCR car en TRUE FALSE ou si on change c'est 1/0 donc trop faible 
 
 # save(decontaminated, file="deconta_trans.Rdata")
 load("datatransmission/deconta_trans.Rdata")
@@ -203,7 +196,7 @@ load("datatransmission/deconta_trans.Rdata")
 #OTUs à retirer selon microDecon
 decontaminated$OTUs.removed %>% 
   pull(OTU)-> otus_to_remove
-length(otus_to_remove) #il y en a 443
+length(otus_to_remove) #il y en a 433
 
 my_tax_trans %>% 
   filter(OTU %in% otus_to_remove) 
@@ -213,7 +206,7 @@ my_otu_trans %>%
   mutate(.before = 1, total_env = rowSums(.[, 1:728])) %>%
   filter(total_env == 0) %>% 
   rownames(.) -> OTU_absent_from_env_samples
-length(OTU_absent_from_env_samples) #Il y en a 59
+length(OTU_absent_from_env_samples) #Il y en a 58
 
 #OTUs dont les reads sont corrigés
 decontaminated$reads.removed %>%
@@ -222,7 +215,6 @@ decontaminated$reads.removed %>%
   filter(!OTU %in% OTU_absent_from_env_samples) %>% 
   pull(OTU) -> partially_removed 
 length(partially_removed) #Il y en a 66
-
 
 #**Phyloseq object pour faire graph OTU conta
 my_tax_trans %>%
@@ -243,8 +235,6 @@ tax_table(as.matrix(my_tax_trans)) -> TAX.decon
 sample_data(my_mtd_trans) -> MTD
 
 ps_decon = phyloseq(OTU.decon, TAX.decon, MTD)
-# otu_table(ps_decon) %>% View()
-# tax_table(ps_decon) %>% View()
 
 sample_names(OTU.decon) == sample_names(MTD)
 
@@ -292,7 +282,7 @@ ggplot(data=df.pa1, aes(x=pa.neg1, y=pa.pos1, color=contaminant)) +
   ggtitle("Decontamination following microDecon")
 
 #**Decontamination de la table d'OTU----
-decontaminated$decon.table %>% View()
+decontaminated$decon.table %>% 
   mutate(OTU = as.numeric(OTU)) %>% 
   arrange(OTU) %>% 
   mutate(total = rowSums(.[,3:ncol(.)])) %>%
@@ -350,49 +340,48 @@ distrib_OTU <- function(otu_tab){
 
 distrib_OTU(cleaned_otu_table) -> my_otu_distrib
 
-# read_tsv(illumina_data_trans,
-#          na = c("", "NA", "No_hit", "0", "0.0"),
-#          show_col_types = FALSE) %>%
-#   filter(!is.na(references)) %>% 
-#   select(OTU, references) -> references_column
-# 
-# cleaned_otu_table %>%
-#   mutate(OTU = as.numeric(rownames(.))) %>%
-#   left_join(y=references_column, by = "OTU") %>%
-#   pivot_longer(cols = -c("OTU","references"), names_to = "sample_code", values_to = "reads") %>%
-#   filter(reads > 0) %>%
-#   separate_rows(references, sep = ",") %>%
-#   separate(sample_code, into = c("num", "sample"), sep = 1) %>%
-#   group_by(OTU, sample, num) %>%
-#   arrange(., num) %>%
-#   mutate(corrected_reads = reads/n()) %>%
-#   ungroup() %>%
-#   mutate(sample_ID = paste0(num,"", sample)) %>%
-#   mutate(code_unique = paste(OTU, references, sep="_")) %>%
-#   select(-c(references,OTU,reads,num,sample)) %>% 
-#   pivot_wider(names_from = sample_ID, values_from = corrected_reads) %>%
-#   replace(.,is.na(.),0) %>%
-#   column_to_rownames(var = "code_unique") -> my_otu_distrib
-
 #**TAX table après décontamination----
-read_tsv(illumina_data_trans,
-         na = c("", "NA", "No_hit", "0", "0.0"),
-         show_col_types = FALSE) %>% 
-  select(OTU, taxonomy, references) %>% 
-  filter(OTU %in% rownames(cleaned_otu_table)) %>%
-  separate_rows(references, sep = ",") %>% 
-  left_join(read_tsv(file = "databioinfo/SILVA_138.1_SSURef_tax_silva.acc2taxo.gz"), by=c("references" = "accession")) %>% 
-  select(-taxonomy.x) %>%  
-  separate_rows(taxonomy.y, sep = "\\|") %>%
-  left_join(x = .,
-            y = taxa2ranks,
-            by = c("taxonomy.y" = "taxonomic_path")) %>% 
-  filter(taxonomic_rank %in% good_taxonomic_levels) %>%  # Enlève les NA (possiblement au niveau de l'espèce)
-  mutate(taxonomic_rank = fct_relevel(taxonomic_rank, good_taxonomic_levels)) %>% 
-  pivot_wider(names_from = taxonomic_rank, values_from = taxonomy.y) %>% 
-  mutate(code_unique = paste(OTU, references, sep="_")) %>%  # On ajoute code unique avec OTU_références
-  select(-references) %>% 
-  column_to_rownames(var = "code_unique") -> my_tax_distrib  # la colonne "code unique" devient le nom des lignes 
+distrib_tax <- function(otu_tab) {
+  read_tsv(
+    illumina_data_trans,
+    na = c("", "NA", "No_hit", "0", "0.0"),
+    show_col_types = FALSE
+  ) %>%
+    select(OTU, taxonomy, references) %>%
+    filter(OTU %in% rownames(otu_tab)) %>%
+    separate_rows(references, sep = ",") %>%
+    left_join(
+      read_tsv(file = "databioinfo/SILVA_138.1_SSURef_tax_silva.acc2taxo.gz"),
+      by = c("references" = "accession")
+    ) %>%
+    select(-taxonomy.x) %>%
+    separate_rows(taxonomy.y, sep = "\\|") %>%
+    left_join(
+      x = .,
+      y = taxa2ranks,
+      by = c("taxonomy.y" = "taxonomic_path")
+    ) %>%
+    filter(taxonomic_rank %in% good_taxonomic_levels) %>%  # Enlève les NA (possiblement au niveau de l'espèce)
+    mutate(taxonomic_rank = fct_relevel(taxonomic_rank, good_taxonomic_levels)) %>%
+    pivot_wider(names_from = taxonomic_rank, values_from = taxonomy.y) %>%
+    mutate(code_unique = paste(OTU, references, sep = "_")) %>%  # On ajoute code unique avec OTU_références
+    select(-references) %>%
+    column_to_rownames(var = "code_unique") # la colonne "code unique" devient le nom des lignes
+}
+
+distrib_tax(cleaned_otu_table) -> my_tax_distrib
+
+#150 ref à autres choses que bactéries 
+my_tax_distrib %>%
+  filter(!domain == "Bacteria") %>%
+  rownames()
+
+my_tax_distrib %>% 
+  filter(domain=="Bacteria") %>% 
+  rownames() -> OTU_to_keep
+
+filter(my_otu_distrib, rownames(my_otu_distrib) %in% OTU_to_keep) -> my_otu_distrib
+filter(my_tax_distrib, rownames(my_tax_distrib) %in% OTU_to_keep) -> my_tax_distrib
 
 #**phyloseq objet----
 my_mtd_trans %>%
@@ -402,15 +391,12 @@ sample_data(my_mtd_trans) -> MTD
   
 otu_table(cleaned_otu_table,taxa_are_rows = T) -> OTU
 tax_table(as.matrix(cleaned_tax_table)) -> TAX
-  
+
 ps = phyloseq(OTU, TAX, MTD)
   
 otu_table(my_otu_distrib,taxa_are_rows = T) -> OTU
-OTU %>% View()
-
 apply(my_tax_distrib, c(1,2), as.character) %>%
   tax_table(my_tax_distrib) -> TAX
-TAX %>% View()
 
 sample_names(OTU)==sample_names(MTD)
 
@@ -426,11 +412,21 @@ cleaned_otu_table %>%
   rename(total_reads = 2) %>% 
   left_join(my_mtd_trans, ., by = "ID") -> my_mtd_trans
 
+t(cleaned_otu_table) %>% 
+  as.data.frame() %>% 
+  mutate(.before = 1, total_reads = rowSums(.[,1:ncol(.)],na.rm=T)) %>% View()
+
 summary(my_mtd_trans$total_reads)
 which(is.na(my_mtd_trans$total_reads))
 
 ggplot(my_mtd_trans, aes(log10(total_reads), fill=type))+
-  geom_histogram()+
+  geom_histogram(binwidth = 0.1, fill = "lightblue", color = "black")+
+  theme_minimal()+
+  labs(title="Effet fruit - RUN4 - Illumina",
+       x ="Total reads", y = "Frequency")
+
+ggplot(my_mtd_trans, aes(total_reads, fill=type))+
+  geom_histogram(fill = "lightblue", color = "black")+
   theme_minimal()+
   labs(title="Effet fruit - RUN4 - Illumina",
        x ="Total reads", y = "Frequency")
@@ -439,7 +435,6 @@ ggplot(my_mtd_trans, aes(log10(total_reads), fill=type))+
 
 my_mtd_trans <- my_mtd_trans %>% arrange(total_reads)
 sample_order <- my_mtd_trans$Sample_ID
-# label_order <- my_mtd_trans$Sample_ID
 
 ggplot(my_mtd_trans, aes(x=Sample_ID, y=total_reads, col=Stage))+
   geom_point()+
@@ -456,7 +451,10 @@ Stage_order <- c("egg","larva","pupa","adult","mother")
 
 ggplot(my_mtd_trans, aes(x=Stage, y=total_reads))+
   geom_violin(aes(fill=Stage)) + 
-  scale_x_discrete(limits=Stage_order)
+  scale_x_discrete(limits=Stage_order) +
+  scale_fill_manual(values = c("egg" = "#E6194B", "larva" = "#3CB44B", "pupa" = "#FFE119", "adult" = "#4363D8", "mother" = "#F58231"),
+                    labels = c("egg", "larva", "pupa", "adult", "mother")) + 
+  guides(fill = guide_legend(override.aes = list(fill = c("#E6194B", "#3CB44B", "#FFE119", "#4363D8", "#F58231"))))
 
 ggplot(my_mtd_trans, aes(x=Stage, y=total_reads))+
   geom_violin(aes(fill=protein)) + 
@@ -473,15 +471,7 @@ ggplot(my_mtd_trans, aes(x=Stage, y=total_reads))+
 ggplot(my_mtd_trans, aes(x=Stage, y=total_reads))+
   geom_point(aes(shape=Stage, col = protein), size = 3)
 
-# ggplot(my_mtd_trans, aes(x=locality, y=total_reads))+
-#   geom_violin(aes(fill=env))+
-#   scale_x_discrete(limits = c("ANS","ETA","VER","REL","GUI","MAR","PAL","VID","BER","BOU","CIR"))
-# 
-# ggplot(my_mtd_trans, aes(x=locality, y=total_reads))+
-#   geom_point(size = 3, aes(col=sex))+
-#   scale_x_discrete(limits = c("ANS","ETA","VER","REL","GUI","MAR","PAL","VID","BER","BOU","CIR"))
 #Unassigned Reads
-
 my_mtd_trans %>%
   pull(ID) -> only_environmental_samples
 
@@ -505,6 +495,10 @@ as.data.frame(my_otu_distrib) %>% #get reads
   left_join(df, ., by="tax_ID") %>% 
   select(-tax_ID) -> df
 df %>% 
+  select(-`CTL-DNA-Moc-B_S761`,-`CTL-DNA-Moc-A_S377`) %>% 
+  mutate(family = as.character(family)) -> df
+
+df %>% 
   mutate(total = rowSums(.[,8:ncol(.)])) %>%
   filter(total>0) %>%
   select(-total) %>% 
@@ -512,15 +506,120 @@ df %>%
   group_by(Sample) %>% 
   mutate(Rel_ab = Abundance/sum(Abundance)) %>% 
   ungroup() %>% 
-  left_join(., my_mtd_trans, by = c("Sample" = "ID")) -> df_with_NA
+  left_join(., my_mtd_trans, by = c("Sample" = "ID")) %>% 
+  group_by(family, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  pivot_wider(
+    id_cols = 1,
+    names_from = Sample,
+    values_from = Rel_ab,
+    values_fill = NA
+  ) %>% View() #-> df_with_NA_family
 
-ggplot(df_with_NA, aes(x=Sample, y = Rel_ab, fill = Stage)) +
+df_with_NA %>% head(n=100000) %>% View()
+
+df %>% 
+  mutate(total = rowSums(.[,8:ncol(.)])) %>%
+  filter(total>0) %>%
+  select(-total) %>% 
+  pivot_longer(., cols = 8:ncol(.), names_to = "Sample", values_to = "Abundance") %>% 
+  group_by(Sample) %>% 
+  mutate(Rel_ab = Abundance/sum(Abundance)) %>% 
+  ungroup() %>% 
+  left_join(., my_mtd_trans, by = c("Sample" = "ID")) %>% 
+  mutate(tax_ID = sapply(1:nrow(.), function(i) {
+    paste(domain[i], phylum[i], class[i], order[i], family[i], genus[i], sep =
+            "_")
+  })) %>%
+  group_by(tax_ID, Sample) %>%
+  summarise(Rel_ab = sum(Rel_ab)) %>%
+  pivot_wider(
+    id_cols = 1,
+    names_from = Sample,
+    values_from = Rel_ab,
+    values_fill = NA
+  ) %>%
+  view()
+
+df_with_NA %>% 
+  arrange(Stage) %>% 
+  pull(Sample) -> label_order
+
+colors <- c("#3E4A63", "#E56B6F", "#63B69F", "#F6AE2D", "#9B5DE5", "#F96E46", "#5B9BD5", "#E75D6F", "#4BAF7F", "#F5CA5C", "#7C4D79", "#E89644", "#3F6849", "#C98B9D", "#718CA1", "#E2979C")
+colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF", "#C4A6FF", "#FFA6FF", "#FFD6FF", "#FFC6A9", "#FFA97C")
+colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF", "#C4A6FF", "#FFA6FF", "#FFD6FF", "#FFC6A9")
+
+df %>% 
+  mutate(total = rowSums(.[,8:ncol(.)])) %>%
+  filter(total>0) %>%
+  select(-total) %>% 
+  pivot_longer(., cols = 8:ncol(.), names_to = "Sample", values_to = "Abundance") %>% 
+  group_by(Sample) %>% 
+  mutate(Rel_ab = Abundance/sum(Abundance)) %>% 
+  ungroup() %>% 
+  group_by(family, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>%
+  group_by(family) %>% 
+  mutate(family = ifelse(all(Rel_ab < 0.1), "Autres", as.character(family))) %>% 
+  ungroup() %>% 
+  left_join(., my_mtd_trans, by = c("Sample" = "ID")) %>%
+  mutate(Stage = factor(Stage, levels = c("egg", "larva", "pupa", "adult", "mother"),
+                        labels = c("Oeufs",
+                                   "Larves", "Nymphes", "Adultes", "Mères"))) %>% 
+  ggplot(., aes(x=Sample, y = Rel_ab, fill = family)) +
+  geom_bar(aes(fill = as.character(family)), stat = "identity")+
+  theme_minimal()+
+  theme(legend.position = "right",
+        legend.direction = "vertical",
+        legend.justification = "top",
+        legend.box = "vertical",
+        legend.key.size = unit(0.6, "cm"),
+        axis.text.x = element_text(angle=90, vjust=0.4, hjust=1.2),
+        legend.text = element_text(size = 10))+
+  guides(fill = guide_legend(ncol = 1))+
+  scale_fill_manual(values = colors) +
+  # scale_x_discrete(labels = label_order)+
+  labs(
+    x = "Echantillons environnementaux",
+    y = "Abondances réelles",
+    fill = "Familles"
+  ) +
+  facet_wrap(~Stage, scales="free_x", ncol = 5)
+
+my_colors <- c("Enterobacteriaceae" = "red",
+               "Lactobacillaceae" = "blue",
+               "Bacillaceae" = "green",
+               "Staphylococcaceae" = "orange",
+               "Listeriaceae" = "purple",
+               "Enterococcaceae" = "yellow",
+               "Pseudomonadaceae" = "pink",
+               "Hungateiclostridiaceae" = "brown",
+               "Erwiniaceae" = "gray",
+               "NA" = "black")
+
+num_colors <- 340
+palette <- colorRampPalette(colors = c("blue", "green", "yellow", "red"))(num_colors)
+
+ggplot(df_with_NA, aes(x = Sample, y = Rel_ab, fill = family)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = palette) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1.2)) +
+  facet_wrap(~Stage, scales = "free_x")
+
+ggplot(df_with_NA, aes(x=Sample, y = Rel_ab, fill = family)) +
   geom_bar(stat = "identity")+
   theme_minimal()+
   theme(legend.position="none",
         axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
-  # scale_x_discrete(labels = label_order)+
-  facet_wrap(~Stage, scales="free_x") # 57 millions de ligne donc le pc met trop de temps
+  facet_wrap(~Stage, scales="free_x")
+
+# Vérification des types de données uniques après la conversion
+unique_types <- unique(sapply(df_with_NA$family, class))
+print(unique_types)
+
 
 #Afficher les abondances par taxon
 #Niveau genre
@@ -542,32 +641,100 @@ df_with_NA %>%
 #NMDS----
 
 #Avec matrice présence/abnsence
-#Env/sex
+#Stage
 ps_rare = rarefy_even_depth(ps, sample.size = 1000)  
 ps_bin = transform_sample_counts(ps_rare, function(x) 1*(x>0))
 otu_table(ps) %>% 
   as.data.frame() %>% 
   summarise(across(everything(), sum)) %>% 
   select_if(~ sum(.x) < 1000) %>% View() # max read est à 47000 et 3 en dessous de 1000 et 4 entre 0 et 1 mais bizzare 
+sample_data(ps_bin) %>% View()
 
 
-jaccard <- ordinate(ps_bin, "NMDS", "jaccard") 
+jaccard <- ordinate(ps_bin, "PCoA", "jaccard") 
 
-col = c("red","Blue","Yellow","Orange","Green")
+col = c("red","Blue","#FFD6FF","Orange","#A4FFC5")
+colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF", "#C4A6FF", "#FFA6FF", "#FFD6FF", "#FFC6A9")
+col <- c("#FF5F5F","#FFEE8D", "#D1FFA9","#79E7FF", "#FFA6FF")
+col = c("#F8766D", "#7CAE00", "#00BFC4", "#C77CFF", "#F0E442", "#00BA38", "#619CFF", "#D55E00", "#CC79A7", "#999999")
+col = c("purple", "darkgreen", "red","gray","orange")
+ps_bin <- reorder(ps_bin, "Stage")
 plot_ordination(ps_bin,
                 jaccard,
                 type = "samples",
                 color = "Stage") +
   theme_bw() +
   geom_point(size = 3) +
-  theme(legend.position = "right") +
-  theme(legend.text = element_text(face = "italic")) +
+  theme(legend.position = "right",
+  legend.key.size = unit(1, "cm"))+
+  theme(legend.text = element_text(face = "italic", size = 14),
+        legend.title = element_text(size = 14)) +
   # scale_shape_manual(name = "protein", values=c(17,19,21)) +
-  scale_color_manual(name = "Stage", values = col) +
+  scale_color_manual(name = "Stade de développement", values = col,
+                     labels = c("Adulte","Oeuf","Larve","Mère","Pupe"),
+                     guide = guide_legend(override.aes = list(size = 4.5)))# +
   geom_text_repel(aes(label = Stage, fontface = 'italic'), size = 3,max.overlaps = 407)
 
+
+bray <- ordinate(ps_rare, "PCoA", "bray") 
+plot_ordination(ps_rare,
+                bray,
+                type = "samples",
+                color = "Stage") +
+  theme_bw() +
+  geom_point(size = 3) +
+  theme(legend.position = "right",
+        legend.key.size = unit(1, "cm"))+
+  theme(legend.text = element_text(face = "italic", size = 14),
+        legend.title = element_text(size = 14)) +
+  # scale_shape_manual(name = "protein", values=c(17,19,21)) +
+  scale_color_manual(name = "Stade de développement", values = col,
+                     labels = c("Adulte","Oeuf","Larve","Mère","Pupe"),
+                     guide = guide_legend(override.aes = list(size = 4.5)))# +
+geom_text_repel(aes(label = Stage, fontface = 'italic'), size = 3,max.overlaps = 407)
+
+
+tax_table(ps_bin) %>% View()
+
+plot_ordination(ps_bin,
+                jaccard,
+                type = "taxa",
+                color = "phylum") +
+  theme_bw() +
+  geom_point(size = 3) +
+  theme(legend.position = "right") +
+  theme(legend.text = element_text(face = "italic")) #+
+  # scale_shape_manual(name = "protein", values=c(17,19,21)) +
+  # scale_color_manual(name = "family", values = col) +
+  #geom_text_repel(aes(label = class, fontface = 'italic'), size = 3,max.overlaps = 2809)
+
+ps_bin_family = tax_glom(ps_bin, taxrank = "family") 
+
+jaccard <- ordinate(ps_bin_family, "NMDS", "jaccard") 
+
+plot_ordination(ps_bin_family,
+                jaccard,
+                type = "samples",
+                color = "Stage") +
+  theme_bw() +
+  geom_point(size = 3) +
+  theme(legend.position = "right") +
+  theme(legend.text = element_text(face = "italic")) #+
+# scale_shape_manual(name = "protein", values=c(17,19,21)) +
+# scale_color_manual(name = "family", values = col) +
+#geom_text_repel(aes(label = class, fontface = 'italic'), size = 3,max.overlaps = 2809)
+
+plot_ordination(ps_bin_family,
+                jaccard,
+                type = "taxa",
+                color = "family") +
+  theme_bw() +
+  geom_point(size = 3) +
+theme(legend.position = "bottom")
+  
 # comparer attendu avec mock avec observé ou faire à ma manière 
 # dans full join : prendre objet phylo final et recup échantillon mock, agglo au niveau famille (ou genre) et faire pourcentage 
+# rajouter en nombre de reads
 
 #----4. DIVERSITY ANALYSES (Figure 2) ------
 #a. Rarefaction curves (Figure S2)------
@@ -575,27 +742,26 @@ library("iNEXT")
 
 tab <- round(as.data.frame(otu_table(ps)), 0)
 
-out <- iNEXT(tab, q=c(0, 1, 2), datatype="abundance", size=c(500, 1000, 5000, 10000, 25000, 50000))
-
-load("datafruit/diversities.Rdata")
+# out <- iNEXT(tab, q=c(0, 1, 2), datatype="abundance", size=c(500, 1000, 5000, 10000, 25000, 50000))
+# 
+# save(out, file ="datatransmission/out.Rdata")
+load("datatransmission/out.Rdata")
 
 str(out)
 
-my_mtd_env$Label
-
-intersect(out$iNextEst$size_based$Assemblage, my_mtd_env$Label)
+intersect(out$iNextEst$size_based$Assemblage, my_mtd_trans$ID)
 
 out$iNextEst$size_based %>% 
-  filter(Assemblage %in% my_mtd_env$Label[1:72]) %>%
+  filter(Assemblage %in% my_mtd_trans$ID[1:724]) %>%
   filter(Order.q == 0) %>% 
   ggplot(., aes(x= m, y = qD, col = Assemblage))+
   geom_line()+
+  theme(legend.position="none")+ 
   xlab("Nomdre de reads échantillonnés")+
-  ylab("Number of OTUs")+
-  theme_minimal()
+  ylab("Number of OTUs")
 
 out$iNextEst$size_based %>% 
-  filter(Assemblage %in% my_mtd_env$Label[1:15]) %>%
+  filter(Assemblage %in% my_mtd_trans$ID[1:15]) %>%
   filter(!Method == "Observed") %>% 
   filter(Order.q == 0) %>% 
   ggplot(., aes(x= m, y = qD, col = Assemblage, shape = Method))+
@@ -603,10 +769,10 @@ out$iNextEst$size_based %>%
   geom_line()+
   xlab("Nomdre de reads échantillonnés")+
   ylab("Number of OTUs")+
-  theme_minimal()
+  theme(legend.position="none")
 
 p1 <- out$iNextEst$size_based %>% 
-  filter(Assemblage %in% my_mtd_env$Label[1:15]) %>%
+  filter(Assemblage %in% my_mtd_trans$ID[1:15]) %>%
   filter(Method == "Rarefaction") %>% 
   filter(Order.q == 0) %>% 
   ggplot(., aes(x= m, y = qD, col = Assemblage, shape = Method))+
@@ -617,7 +783,7 @@ p1 <- out$iNextEst$size_based %>%
   theme_minimal()
 
 p2 <- out$iNextEst$size_based %>% 
-  filter(Assemblage %in% my_mtd_env$Label[1:15]) %>%
+  filter(Assemblage %in% my_mtd_trans$ID[1:15]) %>%
   filter(Method == "Extrapolation") %>% 
   filter(Order.q == 0) %>% 
   ggplot(., aes(x= m, y = qD, col = Assemblage, shape = Method))+
@@ -626,10 +792,8 @@ p2 <- out$iNextEst$size_based %>%
   ylab("Number of OTUs")+
   theme_minimal()
 
-p1+p2
-
 out$iNextEst$size_based %>% 
-  filter(Assemblage %in% my_mtd_env$Label[1:8]) %>%
+  filter(Assemblage %in% my_mtd_trans$ID[20:35]) %>%
   ggplot(., aes(x= m, y = qD, col = as.factor(Order.q)))+
   geom_line()+
   facet_wrap(~Assemblage,  ncol = 4)+
@@ -637,11 +801,9 @@ out$iNextEst$size_based %>%
   ylab("Number of OTUs")+
   theme_minimal()
 
-plot_richness(ps, measures="Shannon", color = "env")+
-  facet_wrap(~env, scales ="free_x")
-
-plot_richness(ps, measures="Shannon", color = "locality")+
-  facet_wrap(~locality, scales ="free_x")
+plot_richness(ps, measures = "Shannon", color = "Stage") +
+  facet_grid(~reorder(Stage, match(Stage, c("egg", "pupa", "larva", "adult", "mother"))), 
+             scales = "free_x")
 
 data.frame(
   Sample=sample_names(ps),
@@ -651,87 +813,89 @@ data.frame(
   Chao1 = estimate_richness(ps, measures = "Chao1"),
   Total_reads = sample_sums(ps)
 ) %>% 
-  left_join(., my_mtd_env, by=c("Sample" = "Label")) %>%  
-  arrange(env) -> df
+  left_join(., my_mtd_trans, by=c("Sample" = "ID")) -> df
 
-my_mtd_env %>% 
-  arrange(env) %>% 
-  pull(Label)->samples_bon_ordre 
+my_mtd_trans %>% 
+  mutate(stage_ind = case_when(
+    Stage == "egg" ~ 1,
+    Stage == "larva" ~ 2,
+    Stage == "pupa" ~ 3,
+    Stage == "adult" ~ 4,
+    Stage == "mother" ~ 5,
+    TRUE ~ NA_integer_
+  )) %>% 
+  arrange(stage_ind) %>% 
+  pull(ID) -> samples_bon_ordre
 
-ggplot(df, aes(x=Sample, y = Shannon, fill=env))+
+my_mtd_trans %>% 
+  mutate(stage_ind = case_when(Stage == "egg" ~ 1,Stage == "larva" ~ 2,Stage == "pupa" ~ 3,Stage == "adult" ~ 4,Stage == "mother" ~ 5,TRUE ~ NA_integer_)) %>% 
+  arrange(stage_ind) %>% 
+  distinct(Stage) %>%
+  pull(Stage) %>% 
+  as.character()-> etiquettes_bon_ordre
+
+ggplot(df, aes(x=Sample, y = Shannon, fill=Stage))+
   geom_col()+
   theme(legend.position="right",
         axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
   scale_x_discrete(limits = samples_bon_ordre)
 
-my_mtd_env %>% 
-  arrange(locality) %>% 
-  pull(Label)->samples_bon_ordre 
-
-ggplot(df, aes(x=Sample, y = Shannon, fill=locality))+
+ggplot(df, aes(x=Sample, y = Shannon, fill=factor(Stage, levels=etiquettes_bon_ordre)))+
   geom_col()+
   theme(legend.position="right",
         axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
+  labs(fill ="Stage")+
   scale_x_discrete(limits = samples_bon_ordre)
 
-ggplot(df, aes(x=Sample, y = Shannon, fill=env))+
+ggplot(df, aes(x=Sample, y = Shannon, fill=Stage))+
   geom_col()+
   theme(legend.position="right",
         axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
-  #scale_x_discrete(limits = samples_bon_ordre)+
-  facet_grid(.~env, scales="free_x", shrink = F)
+  facet_grid(.~reorder(Stage, match(Stage, c("egg", "larva", "pupa", "adult", "mother"))), 
+             scales = "free_x")
 
-ggplot(df, aes(x=env, y = Shannon, fill=env))+
-  geom_boxplot()+
-  geom_point(size = 4, aes(shape=df$locality))+
-  theme(legend.position="right",
-        axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))
-#scale_x_discrete(limits = samples_bon_ordre)+
-#facet_grid(.~env, scales="free_x", shrink = F)
+# ggiNEXT(out, type=1, facet.var="None", color.var = "Assemblage")+
+#   # facet_wrap(env, scales="free", ncol=4)+
+#   xlab("Number of reads") +
+#   ylab("Number of genera") +
+#   theme_minimal()+
+#   theme(legend.position = "right")+
+#   guides(shape = "none") +
+#   scale_shape_manual()
 
-ggiNEXT(out, type=1, facet.var="None", color.var = "Assemblage")+
-  # facet_wrap(env, scales="free", ncol=4)+
-  xlab("Number of reads") +
-  ylab("Number of genera") +
-  theme_minimal()+
-  theme(legend.position = "right")+
-  guides(shape = "none") +
-  scale_shape_manual()
-
-unique_colors <- viridis_pal()(length(unique(out$Data$Assemblage)))
-out$DataInfo %>% View()
-out$AsyEst %>% View()
-out$iNextEst$coverage_based
-
-ggiNEXT(out, type=1, facet.var="None", color.var = "Assemblage") +
-  xlab("Number of reads") +
-  ylab("Number of genera") +
-  theme_minimal() +
-  theme(legend.position = "right") +
-  scale_color_manual(values = unique_colors)
+# unique_colors <- viridis_pal()(length(unique(out$Data$Assemblage)))
+# out$DataInfo %>% View()
+# out$AsyEst %>% View()
+# out$iNextEst$coverage_based
+# 
+# ggiNEXT(out, type=1, facet.var="None", color.var = "Assemblage") +
+#   xlab("Number of reads") +
+#   ylab("Number of genera") +
+#   theme_minimal() +
+#   theme(legend.position = "right") +
+#   scale_color_manual(values = unique_colors)
 
 
 #b. Diversities------
 #Gamma diversity
 library(vegan)
 
-my_ps <- ps_genus_nmds
+otu_table(ps_bin_family) %>% View()
+
+my_ps <- ps
 df_taxo = as.data.frame(tax_table(my_ps))
 df_taxo$tax_ID = rownames(df_taxo)
 df_reads = as.data.frame(otu_table(my_ps))
 df_reads$tax_ID = rownames(df_reads)
 df_wide = left_join(df_taxo, df_reads, by = "tax_ID") 
-df_wide$Species <- NULL 
-# View(df_wide)
-BF <- df_wide[, c(7, 8:80)]
+BF <- df_wide[, c(9:ncol(df_wide))]
 if (length(which(BF$genus == "uncultured")) == 2)
   BF$genus[which(BF$genus == "uncultured")] <-
   c("uncultured_1", "uncultured_2")
 BF$genus[which(BF$genus == "Allorhizobium-Neorhizobium-Pararhizobium-Rhizobium")] <-
   "Rhizobium"
 rownames(BF) <- BF$tax_ID
-BF$genus <- NULL
-BF$tax_ID <- NULL
+
 # colnames(BF) <- mtd$label[match(colnames(BF), mtd$sample_ID)]
 FB <- t(BF)
 Log_FB = log10(FB + 1)
@@ -743,15 +907,140 @@ res_spl$statistic
 #Alpha diversities by sample (Figure 2)
 library(iNEXT)
 
-load("diversities.Rdata")
+load("datatransmission/out.Rdata")
 
 div_df<-out$AsyEst[out$AsyEst$Diversity=="Shannon diversity",]
 
-div_df<-left_join(div_df, mtd, by = c("Assemblage" = "Label"))
+div_df<-left_join(div_df, my_mtd_trans, by = c("Assemblage" = "ID"))
 
-names(div_df)
+div_df$Family <- as.character(div_df$Family)
+div_df$replicate_ind <- as.character(div_df$replicate_ind)
 
-plot_heatmap(ps_genus_nmds, "RDA", "none", sample.label="env", taxa.label="family")
+div_df %>% 
+  mutate(Stage = factor(Stage, levels = c("egg", "larva", "pupa", "adult", "mother"),
+                        labels = c("Oeufs",
+                                   "Larves", "Nymphes", "Adultes", "Mères"))) -> div_df
+
+plot_heatmap(ps_rare, "RDA", "none", sample.label="Stage", taxa.label="family")
+
+div_df %>%  View()
+
+library(lme4)
+library(nlme)
+
+ggplot(div_df, aes(x=Estimator, fill=Family))+
+  geom_histogram(binwidth = 0.3)+
+  theme_minimal()+
+  scale_fill_manual(values = c("#F8766D", "#7CAE00", "#00BFC4", "#C77CFF", "#F0E442", "#00BA38", "#619CFF", "#D55E00", "#CC79A7", "#999999"))
+
+ggplot(div_df, aes(x= Stage, y=Estimator, fill=Stage))+
+  geom_boxplot()+
+  theme_minimal()+
+  scale_fill_manual(values = c("#F8766D", "#7CAE00", "#00BFC4", "#C77CFF", "#F0E442", "#00BA38", "#619CFF", "#D55E00", "#CC79A7", "#999999"))+
+  labs(x = "Stade de développement", y= "Indice de Shannon")
+
+ggplot(div_df, aes(x= Stage, y=Estimator, fill=Stage))+
+  geom_histogram(binwidth = 0.01)+
+  theme_minimal()+
+  scale_fill_manual(values = c("#F8766D", "#7CAE00", "#00BFC4", "#C77CFF", "#F0E442", "#00BA38", "#619CFF", "#D55E00", "#CC79A7", "#999999"))+
+  labs(x = "Stade de développement", y= "Indice de Shannon")
+
+mod <- glm(Estimator ~ Stage*culture*replicate_ind*protein*replicate_culture*Family, data=div_df, family = "quasigaussian")
+mod <- glm(Estimator ~  Stage, data=div_df, family = Gamma(link = "inverse"))
+summary(mod)
+anova(mod)
+
+mod <- lmer(Estimator ~ Stage + (1|Family), data=div_df)
+summary(mod)
+anova(mod)
+
+mod <- glmer(Estimator ~ 0 + Stage + (1|Family), data=div_df, family = Gamma(link = "inverse"))
+summary(mod)
+library(multcomp)
+glht(mod, linfct = mcp(Stage = "Tukey"))
+
+# Modèle GLMER avec l'effet aléatoire de Family
+mod <- glmer(Estimator ~ Stage*replicate_ind*replicate_culture + (1|Family), data=div_df, family = poisson)
+# Modèle LMER avec l'effet aléatoire de Family
+mod <- lmer(Estimator ~ Stage*protein + (1|Family), data=div_df)
+aov1 <- aov(Estimator ~ Stage+replicate_ind+replicate_culture+Family, data = div_df)
+summary(aov1)
+#des variables semblent trop corrélées et sont enlevées 
+cor(, method = "spearman")
+mod
+anova(mod)
+summary(mod)
+
+#ATTention je mets ça là
+div_df %>% 
+  ggplot(., aes(x=Estimator))+
+  geom_histogram()
+div_df %>% 
+  filter(!Stage=="mother")-> div_petit
+
+mod <- glmer(Estimator ~ Stage + (1|Family), data=div_petit, family="inverse.gaussian")
+warnings(mod)
+
+mod <- glmer(Estimator ~ Stage + (1|Family), data = div_df, family = poisson(link = "log"), 
+             glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 100000)))
+
+
+modlm <- lm(Estimator ~ Stage*Family*replicate_ind*replicate_culture, data=div_df)
+anova(modlm)
+summary(modlm)
+
+modror <- aov(Estimator~Stage+protein+Error(Family),data=div_df)
+summary(modror)
+
+library(lmtest)
+model.res <- residuals(modlm)
+dwtest(modlm)
+shapiro.test(model.res)
+bptest(modlm)
+
+modlm2 <- aov(Estimator ~ Stage*Family*replicate_ind*replicate_culture, data=div_df)
+anova(modlm2)
+#spécifié le tyoe d'anova (1, 2 ou 3)
+
+library(lmtest)
+model.res1 <- residuals(modlm2)
+dwtest(modlm2)
+shapiro.test(model.res1)
+bptest(modlm2)
+
+#aov et lm ont meme resultats partout
+
+mod1 <- aov(Estimator ~ Stage*culture*replicate_ind*protein*replicate_culture*Family, data = div_df)
+anova(mod1)
+
+mod2 <- aov(Estimator ~ Stage, data = div_df)
+plot(TukeyHSD(mod2))
+
+#Bar plot Stage
+div_df %>% 
+  arrange(Stage) %>% 
+  pull(Assemblage) -> ordre
+
+ggplot(div_df, aes(
+  x = Assemblage,
+  y = Estimator,
+  fill = Stage
+)) +
+  geom_col() +
+  geom_errorbar(aes(ymin=LCL, ymax=UCL), width=.5,
+                position=position_dodge(.9)) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 90),
+    axis.text.y = element_text(size = 10),
+    legend.text = element_text(face = "italic")
+  ) +
+  scale_x_discrete(name = "Echantillons environnementaux", limits = ordre) +
+  scale_y_continuous(name = "Diversité alpha") +
+  scale_fill_manual(
+    name = "Stade de développement",
+    values = c("#F15F79", "#FFB347", "#77DD77", "#AEC6CF", "#F3A0F2")
+  )
 
 #--------- LBM Clustering ------
 library(sbm)
@@ -764,6 +1053,9 @@ save(LBM_log_reads_gaussian, )
 load("datafruit/LBM_log_reads_gaussian.Rdata")
 
 str(LBM_log_reads_gaussian)
+
+Log_FB <- log10()
+plotMyMatrix(FB)
 
 memb_spl_obs <- LBM_log_reads_gaussian$memberships$row
 
