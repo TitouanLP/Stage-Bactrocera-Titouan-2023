@@ -1,7 +1,20 @@
 # Stage-Bactrocera-Titouan-2023
+Les scripts sont encore en cours de développement et ne sont pas encore annotés ni correctement arrangés. Ils seront proprement présenté dans les semaine à venir. 
 
-Code script R : assignation taxonomique et tests statistiques 
+Script _bactrocera dorsalis_:
 
-Le script mock donne de très bon résultat avec l'assignation multiple que l'on avait pas avait nos premiers scripts. Il semblerait que passer par un objet phyloseq ne soit pas la meilleure solution en assignation multiple.
-Le script transmission n'est pas encore fini mais il y a déjà quelques résultats sympas qui montre un effet stade de dvp. 
-Pour le script ENV, il manque le partie clustering et MASSOL, qui devrait arriver d'ici 1 à 2 semaines.
+1) Fin de traitements bioinformatique et assignation taxonomique
+a. Assignation taxonomique et vérification de la qualité des lectures
+b. Décontamination
+
+2) Composition du microbiote et analyse de diversité (bêta et alpha)
+
+3) Analyse de réseaux proposées par Massol et al. (2021)
+
+Script _Ceratitis Capitata_:
+
+1) Fin de traitements bioinformatique et assignation taxonomique
+a. Assignation taxonomique et vérification de la qualité des lectures
+b. Décontamination
+
+2) Composition du microbiote et analyse de diversité (bêta et alpha)
