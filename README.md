@@ -11,6 +11,11 @@ b. Décontamination
 
 3) Analyse de réseaux proposées par Massol et al. (2021)
 
+Script Mock _bactrocera dorsalis_:
+> Ce script sera potentiellement regroupé avec le précédent à l'avenir 
+
+1) Etude de la composition des échantillons témoins
+
 Script _Ceratitis Capitata_:
 
 1) Fin de traitements bioinformatique et assignation taxonomique
