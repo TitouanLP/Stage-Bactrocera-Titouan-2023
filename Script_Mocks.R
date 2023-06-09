@@ -139,15 +139,13 @@ read.csv2(file = "dataFRUIT/mock_zymo_expected.csv") %>%
   relocate(domain, .before = phylum) %>% 
   select(-Species) -> Mock.expected
 
-Mock.expected %>% view()
-
 #**Metadata----
 #Formatage de my_mtd pour phyloseq
 read.csv2("dataFRUIT/metadata_illumina.csv") %>% 
   add_count(Label) %>%
   mutate(Label = paste0(str_pad(row_number(),width=2, side="left",pad = "0"), "_", Label)) %>%
   select(-n) %>% 
-  filter(type=="ZYMO" | type =="NEG") -> my_mtd
+  filter(type=="ZYMO") -> my_mtd
 
 my_mtd %>%
   select(sample_ID) %>%
@@ -206,16 +204,10 @@ as.data.frame(tax_table(ps_object)) %>%  #get taxonomy
 as.data.frame(otu_table(ps_object)) %>% #get reads 
   rownames_to_column(var = "tax_ID") %>% 
   left_join(df, ., by="tax_ID") %>% 
-  select(-tax_ID) -> df
-
-names(df)
-
-df %>% 
+  select(-tax_ID) %>% 
   mutate(total = rowSums(.[,8:ncol(.)])) %>%
   filter(total>0) %>%
   select(-total) -> df
-
-df %>% view()
 
 #avec des NA
 df %>% 
@@ -231,12 +223,54 @@ ggplot(df_with_NA, aes(x=Sample, y = Rel_ab, fill = family)) +
   theme(legend.position="right",
         axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))
 
+colors <- c("#FF4200","#3CB44B", "#FFE119", "#4363D8", "#FFFAC8",
+            "#46F0F0", "#FABEBE", "#AAFFC3", "#008080", "#0082C8",
+            "#FFD8B1", "#9A6324", "#800000",  "#808000", "#000075", "#FF6600","darkgreen")
+
+df_with_NA %>%
+  group_by(family,Sample) %>% 
+  summarise(Abundance = sum(Abundance), Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>% 
+  group_by(family) %>% 
+  mutate(family = ifelse(all(Rel_ab < 0.005), "Autres", family)) %>% 
+  ungroup() %>% 
+  group_by(family, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>%
+  # rbind.data.frame(., test) %>% 
+  ggplot(., aes(x=Sample, y = Rel_ab, fill = family)) +
+  geom_bar(stat = "identity")+
+  theme_minimal()+
+  scale_fill_manual(values = colors) +
+  theme(legend.key.size = unit(0.7, "cm"),
+        legend.text = element_text(size = 11),
+        legend.position="right",
+        axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
+  labs(x="Echantillons", y = "Abondances relatives", fill="Familles")
+
+df_with_NA %>%
+  group_by(family, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>%  
+  pivot_wider(id_cols = 1, names_from = Sample, values_from = Rel_ab, values_fill = NA) %>%
+  view()
+
 df_with_NA %>%
   mutate(tax_ID = sapply(1:nrow(.), function(i){
-      paste(domain[i], phylum[i],class[i], order[i], family[i], genus[i], OTU[i], sep="_")})) %>% 
-  group_by(tax_ID) %>% 
-  mutate(Rel_ab_new = sum(Rel_ab)) %>% 
-  pivot_wider(id_cols = 1:6, names_from = Sample, values_from = Rel_ab_new, values_fill = NA) %>% view()
+    paste(domain[i], phylum[i],class[i], order[i], family[i], genus[i], sep="_") 
+  })) %>% 
+  group_by(tax_ID, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>%  
+  pivot_wider(id_cols = 1, names_from = Sample, values_from = Rel_ab, values_fill = NA) %>%
+  view()
+
+df_with_NA %>%
+  mutate(tax_ID = sapply(1:nrow(.), function(i){
+    paste(domain[i], phylum[i],class[i], order[i], family[i], sep="_") 
+  })) %>% 
+  group_by(tax_ID, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>%  
+  pivot_wider(id_cols = 1, names_from = Sample, values_from = Rel_ab, values_fill = NA) %>%
+  view()
 
 #sans NA
 df %>% 
@@ -305,7 +339,7 @@ tax_table(as.matrix(my_tax_distrib)) -> TAX
 ps_full_distrib = phyloseq(OTU, TAX, MTD)
 
 ps_zymo = prune_samples(sample_data(ps_full_distrib)$type == "ZYMO", ps_full_distrib)
-ps_zymo = prune_taxa(taxa_sums(ps_zymo)>0, ps_zymo) # Vrai intéret de créer des objets phylo si on les passe en df juste après ?
+ps_zymo = prune_taxa(taxa_sums(ps_zymo)>0, ps_zymo) 
 
 #**Visualisation----
 ps_object = ps_zymo
@@ -314,30 +348,83 @@ as.data.frame(tax_table(ps_object)) %>%  #get taxonomy
 as.data.frame(otu_table(ps_object)) %>% #get reads 
   rownames_to_column(var = "tax_ID") %>% 
   left_join(df, ., by="tax_ID") %>% 
-  select(-tax_ID) -> df
-
-names(df)
-
-df %>% 
+  select(-tax_ID) %>% 
   mutate(total = rowSums(.[,8:ncol(.)])) %>%
   filter(total>0) %>%
   select(-total) -> df
-
-df %>% view()
 
 #avec des NA
 df %>% 
   pivot_longer(., cols = 8:ncol(.), names_to = "Sample", values_to = "Abundance") %>%
   group_by(Sample) %>% 
   mutate(Rel_ab = Abundance/sum(Abundance)) %>% 
-  ungroup() %>%
+  ungroup() %>% 
   rbind.data.frame(., Mock.expected) -> df_with_NA
 
-ggplot(df_with_NA, aes(x=Sample, y = Rel_ab, fill = family)) +
+
+colors <- c("#E6194B", "#3CB44B", "#FFE119", "#4363D8", "#F58231", "#FFFAC8",
+            "#46F0F0", "#FABEBE", "#AAFFC3", "#008080", "#0082C8",
+            "#FFD8B1", "#9A6324", "#800000",  "#808000", "#000075", "#FF6600","darkgreen")
+
+
+df_with_NA %>%
+  group_by(genus,Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>% 
+  group_by(genus) %>% 
+  mutate(genus = ifelse(all(Rel_ab < 0.005), "Autres", genus)) %>% 
+  ungroup() %>% 
+  group_by(genus, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>% 
+  # rbind.data.frame(., test) %>% 
+  ggplot(., aes(x=Sample, y = Rel_ab, fill = genus)) +
   geom_bar(stat = "identity")+
   theme_minimal()+
+  theme(legend.key.size = unit(0.7, "cm"),
+        legend.text = element_text(size = 11),
+        axis.text.x = element_text(angle=90, vjust=0.4, hjust=1.2))+
+  guides(fill = guide_legend(ncol = 1))+
+  labs(x="Echantillons", y = "Abondances relatives", fill="Genres") +
+  scale_fill_manual(values = colors)
+
+
+df_with_NA %>%
+  group_by(family,Sample) %>% 
+  summarise(Abundance = sum(Abundance), Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>% 
+  group_by(family) %>% 
+  mutate(family = ifelse(all(Rel_ab < 0.005), "Autres", family)) %>% 
+  ungroup() %>% 
+  group_by(family, Sample) %>% 
+  summarise(Rel_ab = sum(Rel_ab)) %>% 
+  ungroup() %>%
+  # rbind.data.frame(., test) %>% 
+  ggplot(., aes(x=Sample, y = Rel_ab, fill = family)) +
+  geom_bar(stat = "identity")+
+  theme_minimal()+
+  scale_fill_manual(values = colors) +
   theme(legend.position="right",
-        axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))
+        legend.key.size = unit(0.7, "cm"),
+        legend.text = element_text(size = 11),
+        axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
+  labs(x="Echantillons", y = "Abondances relatives", fill="Familles")
+
+df %>% 
+  pivot_longer(., cols = 8:ncol(.), names_to = "Sample", values_to = "Abundance") %>%
+  group_by(Sample) %>% 
+  mutate(Rel_ab = Abundance/sum(Abundance)) %>% 
+  ungroup() %>% 
+  filter(family %in% c("Enterobacteriaceae", "Lactobacillaceae", "Bacillaceae", "Staphylococcaceae", "Listeriaceae", "Enterococcaceae", "Pseudomonadaceae", NA)) %>% 
+  rbind.data.frame(., Mock.expected) %>% 
+  ggplot(., aes(x=Sample, y = Rel_ab, fill = family)) +
+  geom_bar(stat = "identity")+
+  theme_minimal()+
+  # scale_fill_manual(values = colors) +
+  theme(legend.position="right",
+        axis.text.x = element_text(angle=90,vjust=0.4,hjust=1.2))+
+  labs(x="Echantillons", y = "Abondances relatives", fill="Genres") +
+  scale_fill_manual(values = colors)
 
 #Afficher les abondances par taxon
 #Niveau genre
