@@ -23,3 +23,9 @@ Les scripts sont encore en cours de développement et ne sont pas encore annoté
 #### b. Décontamination
 
 ### 2) Composition du microbiote et analyse de diversité (bêta et alpha)
+
+
+## Script Mock_Ceratitis capitata_:
+> Ce script sera potentiellement regroupé avec le précédent à l'avenir 
+
+### 1) Etude de la composition des échantillons témoins
