@@ -15,7 +15,7 @@ Les scripts sont encore en cours de développement et ne sont pas encore annoté
 
 1. Etude de la composition des échantillons témoins
 
-### Script _Ceratitis capitata_:
+### Script _Ceratitis capitata_ :
 
 1. Fin de traitements bioinformatique et assignation taxonomique
   - Assignation taxonomique et vérification de la qualité des lectures
@@ -23,6 +23,6 @@ Les scripts sont encore en cours de développement et ne sont pas encore annoté
 
 2. Composition du microbiote et analyse de diversité (bêta et alpha)
 
-### Script Mock _Ceratitis capitata_:
+### Script Mock _Ceratitis capitata_ :
 
 1. Etude de la composition des échantillons témoins
