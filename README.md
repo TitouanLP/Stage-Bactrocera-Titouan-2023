@@ -16,7 +16,7 @@ Script Mock _Bactrocera dorsalis_ :
 
 1) Etude de la composition des échantillons témoins
 
-Script _Ceratitis Capitata_:
+Script _Ceratitis capitata_:
 
 1) Fin de traitements bioinformatique et assignation taxonomique
 a. Assignation taxonomique et vérification de la qualité des lectures
