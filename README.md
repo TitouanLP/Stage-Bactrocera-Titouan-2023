@@ -3,9 +3,9 @@ Les scripts sont encore en cours de développement et ne sont pas encore annoté
 
 Script _bactrocera dorsalis_ :
 
-1) Fin de traitements bioinformatique et assignation taxonomique
-a. Assignation taxonomique et vérification de la qualité des lectures
-b. Décontamination
+1) Fin de traitements bioinformatiques et assignation taxonomique
+   a) Assignation taxonomique et vérification de la qualité des lectures 
+   b) Décontamination
 
 2) Composition du microbiote et analyse de diversité (bêta et alpha)
 
