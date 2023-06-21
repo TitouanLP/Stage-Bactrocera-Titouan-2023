@@ -545,8 +545,6 @@ df_with_NA %>%
   arrange(Stage) %>% 
   pull(Sample) -> label_order
 
-colors <- c("#3E4A63", "#E56B6F", "#63B69F", "#F6AE2D", "#9B5DE5", "#F96E46", "#5B9BD5", "#E75D6F", "#4BAF7F", "#F5CA5C", "#7C4D79", "#E89644", "#3F6849", "#C98B9D", "#718CA1", "#E2979C")
-colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF", "#C4A6FF", "#FFA6FF", "#FFD6FF", "#FFC6A9", "#FFA97C")
 colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF", "#C4A6FF", "#FFA6FF", "#FFD6FF", "#FFC6A9")
 
 df %>% 
@@ -587,18 +585,7 @@ df %>%
   ) +
   facet_wrap(~Stage, scales="free_x", ncol = 5)
 
-my_colors <- c("Enterobacteriaceae" = "red",
-               "Lactobacillaceae" = "blue",
-               "Bacillaceae" = "green",
-               "Staphylococcaceae" = "orange",
-               "Listeriaceae" = "purple",
-               "Enterococcaceae" = "yellow",
-               "Pseudomonadaceae" = "pink",
-               "Hungateiclostridiaceae" = "brown",
-               "Erwiniaceae" = "gray",
-               "NA" = "black")
 
-num_colors <- 340
 palette <- colorRampPalette(colors = c("blue", "green", "yellow", "red"))(num_colors)
 
 ggplot(df_with_NA, aes(x = Sample, y = Rel_ab, fill = family)) +
@@ -740,7 +727,7 @@ theme(legend.position = "bottom")
 #a. Rarefaction curves (Figure S2)------
 library("iNEXT")
 
-tab <- round(as.data.frame(otu_table(ps)), 0)
+# tab <- round(as.data.frame(otu_table(ps)), 0)
 
 # out <- iNEXT(tab, q=c(0, 1, 2), datatype="abundance", size=c(500, 1000, 5000, 10000, 25000, 50000))
 # 
@@ -959,7 +946,8 @@ summary(mod)
 library(multcomp)
 glht(mod, linfct = mcp(Stage = "Tukey"))
 
-# Modèle GLMER avec l'effet aléatoire de Family
+# Modèle GLMER avec l'effet aléatoire de Family 
+## On a testé le glmer mais ça a pas fonctionné 
 mod <- glmer(Estimator ~ Stage*replicate_ind*replicate_culture + (1|Family), data=div_df, family = poisson)
 # Modèle LMER avec l'effet aléatoire de Family
 mod <- lmer(Estimator ~ Stage*protein + (1|Family), data=div_df)
@@ -1041,101 +1029,3 @@ ggplot(div_df, aes(
     name = "Stade de développement",
     values = c("#F15F79", "#FFB347", "#77DD77", "#AEC6CF", "#F3A0F2")
   )
-
-#--------- LBM Clustering ------
-library(sbm)
-LBM_log_reads_gaussian <-
-  as.matrix(Log_FB) %>%
-  estimateBipartiteSBM(model = 'gaussian') #associe les bactéries qui s'associent de façon similaire avec les échantillons
-
-save(LBM_log_reads_gaussian, )
-
-load("datafruit/LBM_log_reads_gaussian.Rdata")
-
-str(LBM_log_reads_gaussian)
-
-Log_FB <- log10()
-plotMyMatrix(FB)
-
-memb_spl_obs <- LBM_log_reads_gaussian$memberships$row
-
-LBM_log_reads_gaussian$nbBlocks
-
-Qrow <- LBM_log_reads_gaussian$nbBlocks["row"][[1]]
-Qcol <- LBM_log_reads_gaussian$nbBlocks["col"][[1]]
-
-memb_spl_obs <- LBM_log_reads_gaussian$memberships$row
-
-LBM_log_reads_gaussian$storedModels %>% arrange(ICL)
-
-SBMobject <- LBM_log_reads_gaussian
-
-BF_mat <- as.matrix(as.data.frame(otu_table(ps)))
-
-BF_mat %>% view()
-
-df = as.data.frame(BF_mat)
-df$taxon = rownames(df)
-df_long <-
-  pivot_longer(df,
-               cols = names(df)[-ncol(df)],
-               names_to = "Label",
-               values_to = "reads")
-df_long <- left_join(df_long, my_mtd_env, by = "Label")
-
-Qrow <- SBMobject$nbBlocks["row"][[1]]
-Qcol <- SBMobject$nbBlocks["col"][[1]]
-
-df_tax_cluster = data.frame(taxon = rownames(BF_mat),
-                            tax_cluster = SBMobject$memberships$col)
-
-df_long <- left_join(df_long, df_tax_cluster, by = "taxon")
-
-df_long <- df_long %>% arrange(tax_cluster)
-
-correct_taxon_order <- unique(df_long$taxon)
-
-df_spl_cluster = data.frame(label = colnames(BF_mat)
-                            ,
-                            spl_cluster = SBMobject$memberships$row)
-df_long <- left_join(df_long, df_spl_cluster, by = "label")
-
-df_long <- df_long %>% arrange(spl_cluster)
-correct_sample_order <- unique(df_long$label)
-
-mat <- ggplot(df_long, aes(
-  x = label,
-  y = taxon,
-  fill = log10(reads + 1)
-)) +
-  coord_flip() +
-  geom_tile() +
-  theme_minimal() +
-  theme(
-    legend.position = "top",
-    axis.text.x = element_text(
-      angle = 90,
-      vjust = 1,
-      hjust = 1,
-      face = "italic"
-    ),
-    axis.text.y = element_text()
-  ) +
-  scale_fill_gradient(low = "white", high = "Black") +
-  scale_y_discrete(name = "Bacterial genus", limits = correct_taxon_order) +
-  scale_x_discrete(name = "Sample", limits = correct_sample_order) +
-  geom_vline(
-    xintercept = 0.5 + cumsum(table(SBMobject$memberships$row))[-length(table(SBMobject$memberships$row))],
-    color = "red",
-    size = 1
-  ) +
-  geom_hline(
-    yintercept = 0.5 + cumsum(table(SBMobject$memberships$col))[-length(table(SBMobject$memberships$col))],
-    color = "red",
-    size = 1
-  )
-mat
-
-myOrderedMatrixPlot(LBM_log_reads_gaussian, BF)
-
-ggsave("res/weigthed_incid_mat.svg")

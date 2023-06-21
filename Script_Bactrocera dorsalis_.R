@@ -7,7 +7,7 @@ library(tidyverse)
 library(phyloseq)
 library(ggrepel)
 library(vegan)
-library("microDecon")
+library(microDecon)
 library(paletteer)
 
 #Load data----
@@ -92,30 +92,35 @@ good_taxonomic_levels <- c("domain", "phylum", "class",
                            "order", "family", "genus")
 #*******************----
 #Metadata----
-read.csv2("dataFRUIT/coordFRUIT_corr_eco.csv") %>%
-  filter(!is.na(env)) %>% 
-  mutate(join_Tmoy = as.numeric(join_Tmoy),
-         join_pluie_moy = as.numeric(join_pluie_moy),
-         join_alt = as.numeric(join_alt)) -> df_lieux
+"dataFRUIT/coordFRUIT_corr_eco.csv" %>% 
+  read_delim(show_col_types = FALSE, delim = ";") -> df_lieux
 
-read.csv2("dataFRUIT/metadata_illumina.csv") %>% 
+. %>% 
+  mutate(temp = row_number(), 
+       temp = str_pad(temp, width=2, side="left", pad = "0")) %>% 
+  unite(Label, temp, Label, sep = "_") -> number_Label
+
+"dataFRUIT/metadata_illumina.csv" %>% 
+  read_csv2(show_col_types = FALSE) %>% 
   filter(experiment == "RUN4") %>% 
+  rename(locality = locality...9,
+         population = locality...10) %>% 
   arrange(env, locality) %>%
-  mutate(Label = paste0(str_pad(row_number(),width=2, side="left",pad = "0"), "_", Label)) %>% 
+  number_Label %>% 
   left_join(., df_lieux, by = c("env","locality")) %>% 
   mutate(row_label = Label,
          grp_plu = as.character(grp_plu)) %>%
   column_to_rownames(. ,var = "row_label") -> my_mtd
 
 #Estimation de la distribution de nos variables à travers nos échantillons 
-ggplot(df_lieux, aes(x=join_Tmoy, y =join_pluie_moy, col = env))+
-  geom_point()+
+ggplot(df_lieux, aes(x=join_Tmoy, y =join_pluie_moy, col = env)) +
+  geom_point() +
   geom_text_repel(aes(label = env, fontface = 'italic'), size =
-                    3, max.overlaps = 100)+
-  geom_segment(aes(x = 20, y = 0, xend = 20, yend = 4000), color = "red", linetype = "dashed", size = 1) +
-  geom_segment(aes(x = 22, y = 0, xend = 22, yend = 4000), color = "red", linetype = "dashed", size = 1) +
-  geom_segment(aes(x = 18, y = 1000, xend = 24, yend = 1000), color = "red", linetype = "dashed", size = 1) + 
-  geom_segment(aes(x = 18, y = 2000, xend = 24, yend = 2000), color = "red", linetype = "dashed", size = 1)
+                    3, max.overlaps = 100) +
+  geom_segment(aes(x = 20, y = 0, xend = 20, yend = 4000), color = "red", linetype = "dashed", linewidth = 1) +
+  geom_segment(aes(x = 22, y = 0, xend = 22, yend = 4000), color = "red", linetype = "dashed", linewidth = 1) +
+  geom_segment(aes(x = 18, y = 1000, xend = 24, yend = 1000), color = "red", linetype = "dashed", linewidth = 1) + 
+  geom_segment(aes(x = 18, y = 2000, xend = 24, yend = 2000), color = "red", linetype = "dashed", linewidth = 1)
 
 #Basic statistics----
 my_mtd %>%
@@ -132,7 +137,7 @@ columns_to_keep <- c("OTU","references",only_environmental_samples)
 
 read_tsv(illumina_data,
          na = c("", "NA", "No_hit", "0", "0.0"),
-         show_col_types = FALSE) %>% 
+         show_col_types = FALSE) %>% View()
   select(all_of(columns_to_keep)) %>%
   mutate(.before = 1, total = rowSums(.[,3:ncol(.)],na.rm=T)) %>% 
   filter(total > 0) %>% 
@@ -421,7 +426,7 @@ ggplot(my_mtd_env, aes(x=sample_ID, y=total_reads, col=env))+
 
 # ggsave("res/RUN4_Distribution_of_total_reads.pdf")
 
-ggplot(my_mtd_env, aes(x=locality.1, y=total_reads, fill = locality.1))+
+ggplot(my_mtd_env, aes(x=population, y=total_reads, fill = population))+
   geom_bar(stat = "identity")
   
 #Les profondeurs de séquençage n'ont pas l'air de varier selon env, sex ou locality. Peut-être un test pour vérifier ça ? On n'a pas beaucoup de libertés...
@@ -500,6 +505,8 @@ as.data.frame(my_otu_distrib) %>% #get reads
   pivot_longer(., cols = 8:ncol(.), names_to = "Sample", values_to = "Abundance") %>% 
   left_join(., my_mtd_env, by = c("Sample" = "Label")) -> df
 
+list_of_population <- c("ANS", "ETA","REL_GB","VER","GUI","MAR","REL_GF","PAL", "VID","BER", "BOU", "CIR")
+
 # Composition par population
 palette_16 <- c("#3E4A63", "#E56B6F", "#63B69F", "#F6AE2D", "#9B5DE5", "#F96E46", "#5B9BD5", "#E75D6F", "#4BAF7F", "#F5CA5C", "#7C4D79", "#E89644", "#3F6849", "#C98B9D", "#718CA1", "#E2979C")
 
@@ -513,7 +520,7 @@ df %>%
   ungroup() %>%
   left_join(., my_mtd_env, by = c("Sample" = "Label")) %>% 
   mutate(env_lab = paste0(substr(Sample, 1, 2), "_", env)) %>% 
-  mutate(locality.1 = factor(locality.1, levels = c("ANS", "ETA","REL_GB","VER","GUI","MAR","REL_GF","PAL", "VID","BER", "BOU", "CIR"))) %>%
+  mutate(population = factor(population, levels = list_of_population)) %>%
   ggplot(., aes(x=env_lab, y = frq, fill = family)) +
   geom_bar(stat = "identity")+
   theme_minimal()+
@@ -527,7 +534,7 @@ df %>%
   guides(fill = guide_legend(ncol = 1))+
   labs(x="Echantillons environnementaux", y = "Abondances relatives", fill="Familles")+
   scale_fill_manual(values = palette_16) +
-  facet_wrap(~locality.1, scales="free_x", ncol = 12)
+  facet_wrap(~population, scales="free_x", ncol = 12)
 
 #Par fruit hôte 
 df %>% 
@@ -568,7 +575,7 @@ df %>%
   mutate(genus = replace(genus, genus == "Allorhizobium-Neorhizobium-Pararhizobium-Rhizobium", "Rhizobium")) %>%
   left_join(., my_mtd_env, by = c("Sample" = "Label")) %>% 
   mutate(env_lab = paste0(substr(Sample, 1, 2), "_", env)) %>% 
-  mutate(locality.1 = factor(locality.1, levels = c("ANS", "ETA","REL_GB","VER","GUI","MAR","REL_GF","PAL", "VID","BER", "BOU", "CIR"))) %>%
+  mutate(population = factor(population, levels = list_of_population)) %>%
   ggplot(., aes(x=env_lab, y = frq, fill = genus)) +
   geom_bar(stat = "identity")+
   theme_minimal()+
@@ -582,7 +589,7 @@ df %>%
   guides(fill = guide_legend(ncol = 1))+
   labs(x="Echantillons environnementaux", y = "Abondances relatives", fill="Genres")+
   scale_fill_manual(values = colors) +
-  facet_wrap(~locality.1, scales="free_x", ncol = 12)
+  facet_wrap(~population, scales="free_x", ncol = 12)
 
 # Abondance des familles par échantillon
 df %>% 
@@ -747,14 +754,15 @@ plot_ordination(ps_bin,
                 color = "env",
                 shape = "sex") +
   theme_bw() +
-  geom_point(size = 3) +
+  geom_point(size = 5) +
   theme(legend.position = "right",
-        legend.text = element_text(size = 10)) +
+        legend.text = element_text(size = 12),
+        legend.key.size = unit(0.8, "cm")) +
   theme(legend.text = element_text(face = "italic")) +
   scale_shape_manual(name = "Sexes", values=c(17,19),
                      labels = c("Femelle", "Mâle")) +
   scale_color_manual(name = "Fruits hôtes", values = col) +
-  geom_text_repel(aes(label = locality, fontface = 'italic'), size = 3,max.overlaps = 65)
+  geom_text_repel(aes(label = locality, fontface = 'italic'), size = 5,max.overlaps = 65)
 
 #Env/Locality
 col = c("red","Blue","Yellow","Orange","Green")
@@ -834,6 +842,45 @@ plot_ordination(ps_bin,
 
 ggsave("results/NMDS_bacteria_plot.svg", width = 15,  height=10, units = "cm")
 
+#Permanova----
+# Sur données non métrique 
+df <- as.data.frame(t(otu_table(ps_rare)))
+my_mtd_env %>%
+  filter(Label != c("09_B-ETA-male","24_G-VER-fem")) -> mtd_perm
+set.seed(1)
+Permanovaresults <- adonis2(df~population*sex, data = mtd_perm,
+                           method = "bray", permutation = 9999)
+Permanovaresults
+
+Permanovaresults <- adonis2(df~env*grp_t*grp_plu, data = mtd_perm,
+                            method = "bray", permutation = 9999)
+Permanovaresults <- adonis2(df~env+grp_t+grp_plu, data = mtd_perm,
+                            method = "bray", permutation = 9999)
+Permanovaresults
+#J'ai pris ces résultats pour le moment qui semble mieux car pas de transformation de données
+
+#Permanova
+#Transformation des données 
+df <- as.data.frame(t(otu_table(ps_rare))) %>% 
+  sqrt()
+my_mtd_env %>%
+  filter(Label != c("09_B-ETA-male","24_G-VER-fem")) -> mtd_perm
+set.seed(1)
+Permanovaresults <- adonis2(df~population*sex, data = mtd_perm,
+                            method = "euclidean", permutation = 9999)
+Permanovaresults
+
+Permanovaresults <- adonis2(df~env*grp_t*grp_plu, data = mtd_perm,
+                            method = "euclidean", permutation = 9999)
+Permanovaresults
+Permanovaresults <- adonis2(df~env+grp_t+grp_plu, data = mtd_perm,
+                            method = "euclidean", permutation = 9999)
+Permanovaresults
+
+#{{extract permanova R2 and p-values}}
+perm_R2 <- Permanovaresults$R2
+perm_pvalues <- Permanovaresults$`Pr(>F)`
+
 #NMDS abondance
 #env/localité
 
@@ -862,6 +909,26 @@ col = c("purple", "darkgreen", "red","gray","orange")
 
 plot_ordination(ps_rare,
                 bray,
+                type = "samples",
+                color = "env",
+                shape = "sex") +
+  theme_bw() +
+  geom_point(size = 3) +
+  theme(legend.position = "right",
+        legend.text = element_text(size = 10)) +
+  theme(legend.text = element_text(face = "italic")) +
+  scale_shape_manual(name = "Sexes", values=c(17,19),
+                     labels = c("Femelle", "Mâle")) +
+  scale_color_manual(name = "Fruits hôtes", values = col) +
+  geom_text_repel(aes(label = locality, fontface = 'italic'), size = 3,max.overlaps = 65)
+
+#env/sex
+eucli <- ordinate(ps_rare, "PCoA", "euclidean") 
+
+col = c("purple", "darkgreen", "red","gray","orange")
+
+plot_ordination(ps_rare,
+                eucli,
                 type = "samples",
                 color = "env",
                 shape = "sex") +
@@ -945,7 +1012,7 @@ div_df %>%
 
 #div alpha par populations
 div_df %>% 
-  group_by(locality.1) %>% 
+  group_by(population) %>% 
   mutate(.before = 4, "mean_pop" = mean(Estimator)) %>%
   distinct(mean_pop, .keep_all = TRUE) %>% View()
 
@@ -983,9 +1050,9 @@ ggplot(div_df, aes(
 colors <- c("#FF5F5F", "#FF8C42", "#FFC168", "#FFEE8D", "#D1FFA9", "#A4FFC5", "#77FFD2", "#4AFFD9", "#1DFFFF", "#79E7FF", "#A4B3FF","#F3A0F2")
 
 loca <- ggplot(div_df, aes(
-  x = locality.1,
+  x = population,
   y = Estimator,
-  fill = locality.1
+  fill = population
 )) +
   geom_boxplot() +
   theme_minimal() +
@@ -1152,16 +1219,16 @@ ggplot(df_long,aes(x=taxon, y=sample_ID, fill=reads))+
   geom_tile()+
   theme_minimal()+
   theme(legend.position="none",
-        axis.text.y = element_text(vjust = 0, hjust = 1, size = 4),
-        axis.text.x = element_text(angle = 90, size = 4))+
+        axis.text.y = element_text(vjust = 0, hjust = 1, size = 6),
+        axis.text.x = element_text(angle = 90, size = 6))+
   scale_fill_gradient(low="white", high="Black")+
   scale_x_discrete(limits = correct_taxon_order, label =
                      my_tax$family[match(my_tax$OTU, colnames(FB_bin))])+
   scale_y_discrete(limits = correct_sample_order)+
   geom_hline(yintercept=0.5+cumsum(table(LBM_log_reads_gaussian$memberships$row))[-length(table(LBM_log_reads_gaussian$memberships$row))],
              color = "red")+
-  geom_vline(xintercept=0.5+cumsum(table(LBM_log_reads_gaussian$memberships$col))[-length(table(LBM_log_reads_gaussian$memberships$col))],
-             color = "red")+
+  # geom_vline(xintercept=0.5+cumsum(table(LBM_log_reads_gaussian$memberships$col))[-length(table(LBM_log_reads_gaussian$memberships$col))],
+  #            color = "red")+
   ylab("Echantillons")+
   xlab("Bactéries")
 
@@ -1669,13 +1736,12 @@ ggplot(df_long,aes(x=taxon, y=sample_ID, fill=reads))+
   scale_y_discrete(limits = correct_sample_order)+
   geom_hline(yintercept=0.5+cumsum(table(LBM_bernoulli$memberships$Samples))[-length(table(LBM_bernoulli$memberships$Samples))],
              color = "red")+
-  geom_vline(xintercept=0.5+cumsum(table(LBM_bernoulli$memberships$ASV))[-length(table(LBM_bernoulli$memberships$ASV))],
-             color = "red")+
+  # geom_vline(xintercept=0.5+cumsum(table(LBM_bernoulli$memberships$ASV))[-length(table(LBM_bernoulli$memberships$ASV))],
+             # color = "red")+
   ylab("Echantillons")+
   xlab("Bactéries")
 
 # --------- Null model ------
-#####ATTENTION MODIFIE SUR LE SCRIPT DU CBGP. A REPRENDRE PROPREMENT.
 library(parallel)
 
 set.seed(1)
@@ -1873,6 +1939,7 @@ NECH <- nrow(FB_bin)
 
 #Alluvial plot----
 library(alluvial)
+library(dplyr)
 
 env_vect = my_mtd_env$env[match(rownames(FB_bin), my_mtd_env$Label)]
 sex_vect <- my_mtd_env$sex[match(rownames(FB_bin), my_mtd_env$Label)]
@@ -1919,7 +1986,7 @@ B <- B[w, ]
 
 alluvial(B[, c(1,2, 3,4)],
          freq = B$Freq,
-         col = case_when(B$Fruit == "Jamrosat" ~ "lightyellow",
+         col = case_when(B$Fruit == "Jamrosat" ~ "yellow",
                          B$Fruit == "Badamier" ~ "purple",
                          B$Fruit == "Goyavier fraise" ~ "red",
                          B$Fruit == "Goyavier blanc" ~ "lightgreen",
@@ -2265,3 +2332,30 @@ varp.config.ecdf<-apply(varp.config,1,ecdf)
 varp.Rsq<-analysis.function.rdpg(FB_bin,dummyType,dummyDiet,dummyGenotype,N_RETAINED)
 tests2.whole<-sapply(1:21,function(x) 1-((varp.config.ecdf[[x]])(varp.Rsq[x])))#all 21 p-values (some are not needed)
 write.csv2(tests2.whole, file = "results_fruit/RDA_edgeperm2_.csv")
+
+# Test RDA à la main----
+library(vegan)
+
+df1 <- as.data.frame(t(otu_table(ps_rare))) %>% 
+  decostand(., method = "hellinger")
+my_mtd_env %>%
+  filter(Label != c("09_B-ETA-male","24_G-VER-fem")) -> mtd_perm
+
+my_rda <- rda(df1 ~ env + grp_plu + grp_t, data = mtd_perm)
+summary(my_rda)
+my_rda
+plot(my_rda)
+RsquareAdj(my_rda)
+anova.cca(my_rda, permutations = 999)
+anova.cca(my_rda, by = "axis")
+anova.cca(my_rda, by = "terms")
+sqrt(vif.cca(my_rda))
+
+install.packages("packfor", repos = "http://R-Forge.R-project.org")
+
+test <- cca(df)
+summary(test, display = "reg") 
+plot(test)
+
+data(dune)
+cca(dune)
