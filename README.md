@@ -1,5 +1,5 @@
 # Stage-Bactrocera-Titouan-2023
-Les scripts sont encore en cours de développement et ne sont pas encore annotés ni correctement arrangés. Ils seront proprement présentés dans les semaines à venir et les mocks fusionnés avec leurs scripts respectifs. 
+La fin du traitement informatique et l'assignation taxinomique ont été réalisé par mon équipe. Le reste des scripts ont été initialement réalisé, que j'ai ensuite modifié. 
 
 ### Script _Bactrocera dorsalis_ :
 
