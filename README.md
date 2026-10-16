@@ -1,5 +1,5 @@
 # Stage-Bactrocera-Titouan-2023
-La fin du traitement informatique et l'assignation taxinomique ont été réalisé par mon équipe. Le reste des scripts ont été initialement réalisé, que j'ai ensuite modifié. 
+La fin du traitement informatique et l'assignation taxinomique ont été réalisé par mon équipe. Le reste des scripts ont été initialement réalisé par mon équipe, que j'ai ensuite modifié. L'annotation finale des scripts sera fait en amont de la publication d'un papier et des résultats. 
 
 ### Script _Bactrocera dorsalis_ :
 
